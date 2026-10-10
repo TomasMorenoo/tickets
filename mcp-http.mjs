@@ -1,7 +1,7 @@
 // Endpoint MCP por HTTP para usar Bitácora como conector de Claude.
-// Herramientas: ver proyectos y tickets, crear tickets y encolar un mensaje de WhatsApp.
-// El bot (whatsapp-bot.js) envía los mensajes al mismo destino que las alertas de tickets,
-// así que no se puede elegir otro número. No permite editar ni archivar tickets.
+// Herramientas: ver proyectos y tickets, crear, editar, anotar y resolver tickets, y encolar
+// un mensaje de WhatsApp. El bot (whatsapp-bot.js) envía los mensajes al mismo destino que
+// las alertas de tickets, así que no se puede elegir otro número. No permite borrar tickets.
 import { timingSafeEqual } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
@@ -15,6 +15,7 @@ const MAX_TICKETS_PER_HOUR = 30;
 const TICKET_TYPES = ["Fix", "Feat", "Refactor", "Config", "Mantenimiento"];
 const PRIORITIES = ["Baja", "Media", "Alta", "Urgente"];
 const STATUSES = ["Pendiente", "En proceso", "Revisión", "Archivado"];
+const OPEN_STATUSES = ["Pendiente", "En proceso", "Revisión"];
 
 const ticketSelect = `
   SELECT t.id, p.prefix || '-' || printf('%03d', t.project_number) AS codigo,
@@ -56,6 +57,16 @@ export function createMcpHandler(db) {
       attempts INTEGER NOT NULL DEFAULT 0,
       last_error TEXT NOT NULL DEFAULT ''
     );
+    -- Sin clave foránea a tickets: la web borra y reinserta todos los tickets en cada guardado
+    -- (PUT /api/state) y un ON DELETE CASCADE se llevaría las notas.
+    CREATE TABLE IF NOT EXISTS ticket_notes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ticket_id INTEGER NOT NULL,
+      body TEXT NOT NULL,
+      author TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_ticket_notes_ticket ON ticket_notes(ticket_id, id);
   `);
 
   const expected = Buffer.from((process.env.MCP_HTTP_TOKEN || "").trim());
@@ -91,6 +102,23 @@ export function createMcpHandler(db) {
     return project;
   }
 
+  const notesByTicket = db.prepare("SELECT id, body AS nota, author AS autor, created_at AS creado FROM ticket_notes WHERE ticket_id = ? ORDER BY id");
+  const insertNote = db.prepare("INSERT INTO ticket_notes(ticket_id, body, author, created_at) VALUES (?, ?, ?, ?)");
+  const resolveTicket = db.prepare(`
+    UPDATE tickets SET status = 'Archivado', resolution_summary = ?, claimed_by = COALESCE(?, claimed_by), updated_at = ?, resolved_at = ?
+    WHERE id = ?
+  `);
+
+  function ticketWithNotes(id) {
+    return { ...ticketById.get(id), notas: notesByTicket.all(id) };
+  }
+
+  function requireOpenTicket(reference) {
+    const ticket = requireTicket(reference);
+    if (ticket.estado === "Archivado") throw new Error(`${ticket.codigo} está archivado y no se puede modificar desde acá.`);
+    return ticket;
+  }
+
   function requireTicket(reference) {
     const value = String(reference).trim();
     const ticket = /^\d+$/.test(value) ? ticketById.get(Number(value)) : ticketByCode.get(value);
@@ -106,7 +134,7 @@ export function createMcpHandler(db) {
   }
 
   function buildServer() {
-    const server = new McpServer({ name: "bitacora", version: "1.1.0" });
+    const server = new McpServer({ name: "bitacora", version: "1.2.0" });
     server.registerTool("enviar_whatsapp", {
       description: "Envía un mensaje de texto al WhatsApp del dueño de Bitácora (el mismo chat que recibe las alertas de tickets). El destino es fijo. El mensaje se encola y el bot lo envía en unos segundos.",
       inputSchema: {
@@ -162,10 +190,10 @@ export function createMcpHandler(db) {
     });
 
     server.registerTool("ver_ticket", {
-      description: "Devuelve todos los datos de un ticket de Bitácora, con la descripción completa.",
+      description: "Devuelve todos los datos de un ticket de Bitácora: descripción completa y las notas de avance cargadas con agregar_nota.",
       inputSchema: { ticket: z.string().trim().min(1).describe("Código como DRP-001 o ID numérico") },
       annotations: { readOnlyHint: true }
-    }, async ({ ticket }) => result({ ticket: requireTicket(ticket) }));
+    }, async ({ ticket }) => result({ ticket: ticketWithNotes(requireTicket(ticket).id) }));
 
     server.registerTool("crear_ticket", {
       description: "Crea un ticket nuevo en Bitácora, en estado Pendiente. Al crearlo, el bot envía la alerta de ticket nuevo por WhatsApp. Usá listar_proyectos si no sabés a qué proyecto corresponde.",
@@ -193,6 +221,54 @@ export function createMcpHandler(db) {
         throw error;
       }
       return result({ creado: true, ticket: ticketById.get(id) });
+    });
+
+    server.registerTool("actualizar_ticket", {
+      description: "Modifica un ticket abierto de Bitácora: título, descripción, tipo, prioridad, estado o quién lo tiene tomado. Solo cambia los campos que se envían. Para cerrarlo usá resolver_ticket.",
+      inputSchema: {
+        ticket: z.string().trim().min(1).describe("Código como DRP-001 o ID numérico"),
+        titulo: z.string().trim().min(3).max(200).optional(),
+        descripcion: z.string().trim().max(4000).optional().describe("Reemplaza la descripción completa"),
+        tipo: z.enum(TICKET_TYPES).optional(),
+        prioridad: z.enum(PRIORITIES).optional(),
+        estado: z.enum(OPEN_STATUSES).optional(),
+        tomadoPor: z.string().trim().max(60).optional().describe("Quién lo está trabajando, por ejemplo 'Claude'. Cadena vacía para liberarlo.")
+      }
+    }, async ({ ticket, titulo, descripcion, tipo, prioridad, estado, tomadoPor }) => {
+      const current = requireOpenTicket(ticket);
+      const columns = { title: titulo, description: descripcion, type: tipo, priority: prioridad, status: estado, claimed_by: tomadoPor };
+      const changes = Object.entries(columns).filter(([, value]) => value !== undefined);
+      if (!changes.length) throw new Error("No se indicó ningún campo para modificar.");
+      const assignments = [...changes.map(([column]) => `${column} = ?`), "updated_at = ?"].join(", ");
+      db.prepare(`UPDATE tickets SET ${assignments} WHERE id = ?`).run(...changes.map(([, value]) => value), new Date().toISOString(), current.id);
+      return result({ actualizado: true, ticket: ticketWithNotes(current.id) });
+    });
+
+    server.registerTool("agregar_nota", {
+      description: "Agrega una nota de avance a un ticket de Bitácora (qué se investigó, qué se cambió, qué falta). Sirve para que otra conversación retome el trabajo: las notas se ven con ver_ticket. No aparecen en la web de Bitácora.",
+      inputSchema: {
+        ticket: z.string().trim().min(1).describe("Código como DRP-001 o ID numérico"),
+        nota: z.string().trim().min(1).max(4000),
+        autor: z.string().trim().max(60).default("Claude")
+      }
+    }, async ({ ticket, nota, autor }) => {
+      const current = requireTicket(ticket);
+      insertNote.run(current.id, nota, autor, new Date().toISOString());
+      return result({ agregada: true, ticket: ticketWithNotes(current.id) });
+    });
+
+    server.registerTool("resolver_ticket", {
+      description: "Marca un ticket de Bitácora como resuelto: guarda el resumen de la solución y lo archiva. El bot avisa por WhatsApp que el ticket fue solucionado. Usalo solo cuando el trabajo está terminado y verificado.",
+      inputSchema: {
+        ticket: z.string().trim().min(1).describe("Código como DRP-001 o ID numérico"),
+        resumen: z.string().trim().min(3).max(4000).describe("Qué se cambió y cómo se verificó"),
+        resueltoPor: z.string().trim().max(60).optional().describe("Quién lo resolvió, por ejemplo 'Claude'")
+      }
+    }, async ({ ticket, resumen, resueltoPor }) => {
+      const current = requireOpenTicket(ticket);
+      const now = new Date().toISOString();
+      resolveTicket.run(resumen, resueltoPor || null, now, now, current.id);
+      return result({ resuelto: true, ticket: ticketWithNotes(current.id) });
     });
 
     return server;
