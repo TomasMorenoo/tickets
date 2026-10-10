@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Panel personal para registrar y resolver cambios, errores y servicios.">
+  <title>Bitácora</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23171a1f'/%3E%3Cpath d='M18 17h20l8 8v22H18z' fill='none' stroke='%23d8ff47' stroke-width='5'/%3E%3Cpath d='M27 31h11M27 39h8' stroke='%23d8ff47' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="app-header">
+      <a class="brand" href="/" aria-label="Bitácora, inicio">
+        <span class="brand-mark">B</span>
+        <span>Bitácora</span>
+      </a>
+      <nav class="nav" aria-label="Navegación principal">
+        <button class="nav-item active" data-view="dashboard"><span>▦</span> Dashboard</button>
+        <button class="nav-item" data-view="all"><span>≡</span> Todos los tickets</button>
+        <button class="nav-item" data-view="archive"><span>□</span> Archivo</button>
+      </nav>
+      <div class="global-actions">
+        <button class="icon-button" data-theme-toggle aria-label="Cambiar tema">◐</button>
+        <button class="primary-button" data-new-ticket><span>+</span> Nuevo ticket</button>
+        <div class="space-menu-wrap">
+          <button class="space-button" id="space-menu-toggle" type="button" aria-label="Mi espacio" aria-expanded="false" aria-controls="space-menu">
+            <span class="owner-avatar" data-owner-avatar>MA</span>
+          </button>
+          <div class="space-menu" id="space-menu" hidden>
+            <button class="space-menu-item" id="open-settings" type="button"><span>⚙</span> Configuración</button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">CENTRO DE OPERACIONES</p>
+          <h1 id="page-title">Dashboard</h1>
+        </div>
+        <div class="mobile-header-actions">
+          <button class="icon-button" data-theme-toggle aria-label="Cambiar tema">◐</button>
+          <button class="primary-button" data-new-ticket><span>+</span> Nuevo ticket</button>
+        </div>
+      </header>
+
+      <section class="stats" aria-label="Resumen de tickets">
+        <article><span>PENDIENTES</span><strong id="stat-pending">0</strong><small id="pending-trend">Esperando acción</small></article>
+        <article><span>EN PROCESO</span><strong id="stat-progress">0</strong><small>Trabajo activo</small></article>
+        <article><span>SOLUCIONADOS</span><strong id="stat-done">0</strong><small>Historial total</small></article>
+        <article class="accent-stat"><span>ESTA SEMANA</span><strong id="stat-week">0</strong><small>Tickets cerrados</small></article>
+      </section>
+
+      <section class="migration-banner" id="type-migration-banner" hidden>
+        <div><strong>Tipos de ticket pendientes de migración</strong><span id="type-migration-banner-text"></span></div>
+        <button class="secondary-button" id="open-type-migration" type="button">Migrar ahora</button>
+      </section>
+
+      <section id="content" class="content"></section>
+      <div id="project-list" hidden></div>
+    </main>
+  </div>
+
+  <dialog id="ticket-dialog">
+    <form id="ticket-form" method="dialog">
+      <div class="dialog-head">
+        <div><p class="eyebrow">NUEVO REGISTRO</p><h2>Crear ticket</h2></div>
+        <button type="button" class="close-dialog" aria-label="Cerrar">×</button>
+      </div>
+      <label>Título<input name="title" required maxlength="90" placeholder="¿Qué hay que resolver?"></label>
+      <label>Descripción<textarea name="description" rows="4" placeholder="Contá el problema con tus palabras..."></textarea></label>
+      <div class="form-grid">
+        <label>Proyecto<select name="project" id="project-select" required></select></label>
+        <label>Tipo<select name="type"><option>Fix</option><option>Feat</option><option>Refactor</option><option>Config</option><option>Mantenimiento</option></select></label>
+        <label>Prioridad<select name="priority"><option>Media</option><option>Alta</option><option>Baja</option><option>Urgente</option></select></label>
+        <label>Estado<select name="status"><option>Pendiente</option><option>En proceso</option><option>Revisión</option><option>Solucionado</option></select></label>
+      </div>
+      <div class="dialog-actions"><button type="button" class="secondary-button close-dialog">Cancelar</button><button type="submit" class="primary-button">Crear ticket</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="project-dialog">
+    <form id="project-form" method="dialog">
+      <div class="dialog-head">
+        <div><p class="eyebrow">NUEVO ESPACIO</p><h2>Agregar proyecto</h2></div>
+        <button type="button" class="close-project" aria-label="Cerrar">×</button>
+      </div>
+      <div class="project-preview">
+        <span id="project-preview-badge">NUE</span>
+        <div><strong id="project-preview-name">Nuevo proyecto</strong><small>Los tickets comenzarán en <b id="project-preview-code">NUE-001</b></small></div>
+      </div>
+      <label>Nombre del proyecto<input id="project-name" name="name" required maxlength="50" autocomplete="off" placeholder="Ej. Portfolio personal"></label>
+      <label>Iniciales <span class="optional">Opcional</span><input id="project-prefix" name="prefix" maxlength="5" autocomplete="off" placeholder="Se generan automáticamente"></label>
+      <label>Ruta local <span class="optional">Opcional</span><input id="project-workspace" name="workspacePath" autocomplete="off" placeholder="C:\Proyectos\mi-web"></label>
+      <fieldset class="color-field">
+        <legend>Color <span class="optional">Opcional</span></legend>
+        <input type="hidden" name="color" id="project-color" value="">
+        <div class="color-options" aria-label="Elegir color">
+          <button type="button" class="color-option auto-color active" data-color="" aria-pressed="true">Auto</button>
+          <button type="button" class="color-option" data-color="#5bd6e8" style="--swatch:#5bd6e8" aria-label="Celeste" aria-pressed="false"></button>
+          <button type="button" class="color-option" data-color="#a68cff" style="--swatch:#a68cff" aria-label="Violeta" aria-pressed="false"></button>
+          <button type="button" class="color-option" data-color="#ff6b5f" style="--swatch:#ff6b5f" aria-label="Coral" aria-pressed="false"></button>
+          <button type="button" class="color-option" data-color="#f5b94c" style="--swatch:#f5b94c" aria-label="Amarillo" aria-pressed="false"></button>
+          <button type="button" class="color-option" data-color="#d8ff47" style="--swatch:#d8ff47" aria-label="Lima" aria-pressed="false"></button>
+        </div>
+      </fieldset>
+      <div class="dialog-actions"><button type="button" class="secondary-button close-project">Cancelar</button><button type="submit" class="primary-button">Agregar proyecto</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="settings-dialog">
+    <form id="settings-form" method="dialog">
+      <div class="dialog-head">
+        <div><p class="eyebrow">MI ESPACIO</p><h2>Configuración</h2></div>
+        <button type="button" class="close-settings" aria-label="Cerrar">×</button>
+      </div>
+      <div class="form-grid">
+        <label>Nombre<input id="profile-first-name" name="firstName" maxlength="40" autocomplete="given-name"></label>
+        <label>Apellido<input id="profile-last-name" name="lastName" maxlength="40" autocomplete="family-name"></label>
+      </div>
+      <div class="settings-section-head"><div><strong>Integraciones</strong><span>Estado actual de los servicios</span></div></div>
+      <div class="service-status-list" id="service-status-list" aria-live="polite">
+        <div class="service-status-card"><span class="service-status-icon">T</span><span><strong>Telegram</strong><small>Consultando estado...</small></span><i class="service-status-dot"></i></div>
+        <div class="service-status-card"><span class="service-status-icon">W</span><span><strong>WhatsApp</strong><small>Consultando estado...</small></span><i class="service-status-dot"></i></div>
+      </div>
+      <div class="settings-section-head"><div><strong>Orden de proyectos</strong><span>Define cómo aparecen en el Dashboard</span></div></div>
+      <div class="settings-project-list" id="settings-project-list"></div>
+      <div class="migration-settings" id="type-migration-settings" hidden>
+        <span><strong>Migración de tipos</strong><small id="type-migration-settings-text"></small></span>
+        <button class="secondary-button" id="settings-type-migration" type="button">Continuar</button>
+      </div>
+      <div class="dialog-actions"><button type="button" class="secondary-button close-settings">Cancelar</button><button type="submit" class="primary-button">Guardar cambios</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="detail-dialog">
+    <div id="ticket-detail"></div>
+  </dialog>
+
+  <dialog id="type-migration-dialog">
+    <div id="type-migration-content"></div>
+  </dialog>
+
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,51 @@
+services:
+  web:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "5003:4173"
+    volumes:
+      - ./data:/app/data
+    env_file:
+      - .env
+    environment:
+      HOST: 0.0.0.0
+
+  telegram:
+    build: .
+    restart: unless-stopped
+    command: npm run bot
+    volumes:
+      - ./data:/app/data
+      - ./.codex-auth:/root/.codex
+      - ./codex-config.toml:/root/.codex/config.toml:ro
+      - .:/vps/clientes/tickets
+      - /dev/null:/vps/clientes/tickets/.env:ro
+      - ${CODEX_DRP_WORKSPACE:-../drPiscinas/app}:/vps/clientes/drPiscinas/app
+    tmpfs:
+      - /vps/clientes/tickets/data
+      - /vps/clientes/tickets/.codex-auth
+      - /vps/clientes/tickets/.wwebjs_auth
+      - /vps/clientes/tickets/.wwebjs_cache
+      - /vps/clientes/tickets/.sites-runtime
+    env_file:
+      - .env
+    environment:
+      CODEX_HOME: /root/.codex
+      CODEX_DEFAULT_WORKSPACE: /vps/clientes
+    depends_on:
+      - web
+
+  whatsapp:
+    build: .
+    restart: unless-stopped
+    command: npm run whatsapp
+    shm_size: 512mb
+    volumes:
+      - ./data:/app/data
+      - ./.wwebjs_auth:/app/.wwebjs_auth
+      - ./.wwebjs_cache:/app/.wwebjs_cache
+    env_file:
+      - .env
+    depends_on:
+      - web

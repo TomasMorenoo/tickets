@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "bitacora": {
+      "type": "stdio",
+      "command": "ssh",
+      "args": [
+        "-i",
+        "C:\\Users\\Moren\\.ssh\\id_ed25519_vps_66_97_38_2",
+        "-p",
+        "5598",
+        "-o",
+        "BatchMode=yes",
+        "tomas@66.97.38.2",
+        "cd /vps/clientes/tickets && sudo docker compose exec -T web node mcp-server.mjs"
+      ]
+    }
+  }
+}

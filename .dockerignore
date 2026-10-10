@@ -1,0 +1,8 @@
+node_modules
+data
+.env
+.wwebjs_auth
+.wwebjs_cache
+.codex-auth
+.sites-runtime
+.git

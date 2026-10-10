@@ -1,0 +1,21 @@
+{
+  "name": "bitacora-tickets",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning server.js",
+    "bot": "node --disable-warning=ExperimentalWarning telegram-bot.mjs",
+    "whatsapp": "node --disable-warning=ExperimentalWarning whatsapp-bot.js",
+    "mcp": "node --disable-warning=ExperimentalWarning mcp-server.mjs"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "qrcode": "^1.5.4",
+    "qrcode-terminal": "^0.12.0",
+    "whatsapp-web.js": "^1.34.7",
+    "zod": "^4.6.5"
+  }
+}

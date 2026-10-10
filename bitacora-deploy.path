@@ -1,0 +1,9 @@
+[Unit]
+Description=Observa solicitudes de despliegue de Bitacora
+
+[Path]
+PathExistsGlob=/vps/clientes/tickets/data/deploy-queue/*.request
+Unit=bitacora-deploy.service
+
+[Install]
+WantedBy=multi-user.target
